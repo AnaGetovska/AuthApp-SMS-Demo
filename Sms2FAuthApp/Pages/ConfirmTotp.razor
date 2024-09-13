@@ -1,0 +1,119 @@
+﻿@page "/verify/{userId}"
+@using Sms2FAuthApp.Models
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+@if (isLoading)
+{
+    <div class="spinner-border text-primary" role="status">
+        <span class="sr-only">Loading...</span>
+    </div>
+    <p>Sending SMS, please wait...</p>
+}
+
+@if (!string.IsNullOrEmpty(UserId) && !isLoading)
+{
+    <EditForm Model="@smsModel" OnValidSubmit="VerifyUser">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="form-group">
+            <label for="smsCode">Enter SMS Verification Code:</label>
+            <InputText id="smsCode" class="form-control" @bind-Value="smsModel.Code" />
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-2">Verify</button>
+    </EditForm>
+}
+
+@if (feedback.HasFeedback)
+{
+    <div class="alert-box @feedback.AlertType">
+        @feedback.AlertMessage
+    </div>
+}
+
+@code {
+    private SmsVerificationModel smsModel = new SmsVerificationModel();
+    private FeedbackModel feedback = new FeedbackModel();
+    private HttpClient _http;
+
+    private bool isLoading = true;
+    private bool isInitialized = false;
+
+    [Parameter]
+    public string UserId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _http = new HttpClient()
+            {
+                BaseAddress = new Uri(Navigation.BaseUri)
+            };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !isInitialized)
+        {
+            var requestId = await GetFromLocalStorageAsync("requestId");
+            if (string.IsNullOrEmpty(requestId))
+            {
+                await SendVerificationCode();
+            }
+
+            smsModel.RequestId = requestId;
+            isLoading = false;
+            StateHasChanged();
+            isInitialized = true;
+        }
+    }
+
+    private async Task VerifyUser()
+    {
+        smsModel.RequestId = await GetFromLocalStorageAsync("requestId");
+        var response = await _http.PostAsJsonAsync($"api/verify", smsModel);
+        if (response.IsSuccessStatusCode)
+        {
+            await RemoveFromLocalStorageAsync("requestId");
+            await SaveInLocalStorageAsync("userId", UserId);
+
+            Navigation.NavigateTo("/");
+        }
+
+        feedback.HasFeedback = true;
+        feedback.AlertType = "alert-warning";
+        feedback.AlertMessage = "Unsuccessful authentication. Please try again.";
+    }
+
+    private async Task SendVerificationCode()
+    {
+        var response = await _http.GetAsync($"api/send-verification?userId={Uri.EscapeDataString(UserId)}");
+        if (response.IsSuccessStatusCode && response.Content != null && response != null)
+        {
+            await SaveInLocalStorageAsync("requestId", await response.Content.ReadAsStringAsync());
+        }
+        else
+        {
+            Navigation.NavigateTo("/login");
+        }
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveInLocalStorageAsync(string key, string value)
+    {
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", key, value);
+    }
+
+    private async Task<string> GetFromLocalStorageAsync(string key)
+    {
+        return await JSRuntime.InvokeAsync<string>("localStorage.getItem", key);
+    }
+
+    private async Task<string> RemoveFromLocalStorageAsync(string key)
+    {
+        return await JSRuntime.InvokeAsync<string>("localStorage.removeItem", key);
+    }
+}

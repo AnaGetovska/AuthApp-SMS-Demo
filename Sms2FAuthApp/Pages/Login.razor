@@ -1,0 +1,82 @@
+﻿@page "/login"
+@using Sms2FAuthApp.Models
+@using Sms2FAuthApp.Services
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<div class="auth-form">
+    <h3 style="margin-top: 2em;">Login</h3>
+
+    <EditForm Model="@user" OnValidSubmit="HandleValidSubmit">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="form-group">
+            <label for="username">Username:</label>
+            <InputText id="username" class="form-control" @bind-Value="user.Username" />
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password:</label>
+            <InputText id="password" type="password" class="form-control" @bind-Value="user.Password" />
+        </div>
+       
+        <button type="submit" class="btn btn-primary mt-2">Login</button>
+    </EditForm>
+    <div style="text-align: center; margin-top: 1em;" class="on-hover" @onclick="NavigateToRegister">Don't have an account? Register here.</div>
+    @if (feedback.HasFeedback)
+    {
+        <div class="alert-box @feedback.AlertType">
+            @feedback.AlertMessage
+        </div>
+    }
+</div>
+
+@code {
+    private UserLoginModel user = new UserLoginModel();
+    private FeedbackModel feedback = new FeedbackModel();
+    private HttpClient _http;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _http = new HttpClient()
+        {
+            BaseAddress = new Uri(Navigation.BaseUri)
+        };
+
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await RemoveFromLocalStorageAsync("requestId");
+        }
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        var response = await _http.PostAsJsonAsync("/api/login", new { user.Username, user.Password });
+        if (response.IsSuccessStatusCode)
+        {
+            var userId = await response.Content.ReadAsStringAsync();
+            Navigation.NavigateTo($"/verify/{userId}");
+        }
+        else
+        {
+            feedback.HasFeedback = true;
+            feedback.AlertType = "alert-warning";
+            feedback.AlertMessage = "Unsuccessful login. Please try again.";
+        }
+    }
+  
+    private void NavigateToRegister()
+    {
+        Navigation.NavigateTo("/register");
+    }
+
+    private async Task<string> RemoveFromLocalStorageAsync(string key)
+    {
+        return await JSRuntime.InvokeAsync<string>("localStorage.removeItem", key);
+    }
+}
